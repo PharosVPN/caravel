@@ -26,7 +26,7 @@ platform-mandated, never shared).
 
 Build the shared core as a **Go library** bound via `gomobile`. Rationale: the
 `.pharos` format, the envelope crypto, and the gRPC contracts are all already Go
-in `helm`/`docs/proto` — a Go core means that code is single-sourced, not
+in `coxswain`/`docs/proto` — a Go core means that code is single-sourced, not
 reimplemented twice. If C1 finds `gomobile` unworkable, the fallback is Kotlin
 Multiplatform; record the decision in this file.
 
@@ -37,7 +37,7 @@ the local store:
 
 | Source | Implementation note |
 |---|---|
-| Account sync | gRPC to `beacon`→`helm`; pull `account`-mode `.pharos`, decrypt with device key |
+| Account sync | gRPC to `beacon`→`coxswain`; pull `account`-mode `.pharos`, decrypt with device key |
 | QR scan | enrollment ticket (fetch full profile) or self-contained profile QR |
 | File import | OS "open with" → `.pharos`; register MIME / UTI / intent filter |
 | MDM managed config | Android managed configurations / iOS Managed App Configuration |
@@ -59,12 +59,12 @@ the local store:
   and admin, lock to pushed profiles, honour policy flags in the MDM payload.
 - No MDM → *personal* posture: all sources available; show the admin section
   only if the logged-in account has an admin role (small glance-and-quick-actions
-  subset — the full console is `helm`'s web UI, do not port it).
+  subset — the full console is `coxswain`'s web UI, do not port it).
 
 ## Crypto (DESIGN §8)
 
 - Per-user keypair. The private key reaches a new device as a **passphrase-wrapped
-  blob** fetched from `helm` (Argon2id-derived key unwraps it). It is never sent
+  blob** fetched from `coxswain` (Argon2id-derived key unwraps it). It is never sent
   or stored in usable form server-side.
 - Store the unwrapped private key in the platform keystore (Android Keystore /
   iOS Keychain, hardware-backed where available).
@@ -81,6 +81,16 @@ the local store:
 | C6 | MDM managed config + managed posture; deep links |
 | C7 | Role-gated admin subset |
 
+### Planned — node cascade / multi-hop (DESIGN decision 18, not scheduled)
+
+A future feature lets a user pick an **exit** node distinct from the **entry**
+node they tunnel to. No work now, but keep one separation clean so it slots in
+later: a profile pins *which node you handshake with* (the entry); the **exit is
+a separate, live, server-side selection** the client requests over the control
+channel — switching it does **not** change the profile or re-establish the
+tunnel. Do not conflate "the node in my profile" with "where my traffic exits,"
+and leave room in the engine/sync client for an exit-selection signal.
+
 ## Non-negotiables
 
 - One app, one store listing. Posture is detected, never a build flag.
@@ -90,5 +100,5 @@ the local store:
 
 ## Depends on
 
-The account/sync protos and the `.pharos` format spec, owned by `helm` /
+The account/sync protos and the `.pharos` format spec, owned by `coxswain` /
 `docs`. Build against `docs/proto/`; do not fork the contracts.
