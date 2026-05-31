@@ -1,35 +1,68 @@
 # caravel
 
-> The small, agile ship that crossed unknown oceans.
+PharosVPN mobile client — **platform-split architecture**.
 
-**`caravel` is the PharosVPN mobile client** — the app end-users actually run.
-It establishes the VPN tunnel and acquires its profiles from whichever source
-fits the user: a synced account, a QR scan, a file, or enterprise MDM.
+> Part of [PharosVPN](https://github.com/PharosVPN) — see [`docs/BUILD.md`](../docs/blob/main/BUILD.md) for the platform roadmap.
 
-Part of the [PharosVPN](https://github.com/PharosVPN) platform — see
-[`docs/DESIGN.md`](https://github.com/PharosVPN/docs/blob/main/DESIGN.md).
+## Architecture decision (C1)
 
-## Role
+**As of 2026-05-31:** The mobile client is split into **two platform-specific repos**:
 
-- **The VPN client.** Runs the actual tunnel — multi-node, multi-protocol
-  (AmneziaWG + XRay/REALITY).
-- **Profile sources, not modes.** A VPN engine reads a local profile store;
-  profiles enter that store from interchangeable sources — account sync, QR,
-  file import, MDM managed config, deep link. "Synced vs unsynced" is just which
-  sources are enabled, not a different app.
-- **Posture-aware.** *Personal*: account login + QR + file import, with an admin
-  section if the logged-in account is an admin. *Managed* (MDM config present):
-  account login and admin hidden, profiles locked. **One app, one store listing.**
-- **Offline-resilient.** Connects from cached local profiles when the account
-  service is unreachable.
+- **[caravel-android](https://github.com/PharosVPN/caravel-android)** — Kotlin + Jetpack Compose
+- **[caravel-ios](https://github.com/PharosVPN/caravel-ios)** — Swift + SwiftUI
 
-## Stack
+Both share a **common Go core** (VPN engine, profile store, gRPC sync, E2E crypto):
+- Compiled via `gomobile` to native bindings
+- Shared codegen from proto contracts
+- Shared test harness
 
-Native — Kotlin (Android) + Swift (iOS) — over a shared core. See [BUILD.md](BUILD.md).
+This repo (`PharosVPN/caravel`) serves as the **umbrella**:
+- Shared Go core (source of truth for crypto, profile format, gRPC, tunnel engines)
+- Shared documentation (BUILD.md, API contracts)
+- Platform-specific repos fork from here for their UI implementations
+
+## Milestones
+
+| Milestone | Android | iOS | Status |
+|---|---|---|---|
+| C1: Skeleton + architecture | [caravel-android](https://github.com/PharosVPN/caravel-android) | [caravel-ios](https://github.com/PharosVPN/caravel-ios) | 🚧 In progress |
+| C2: Profile store + `.pharos` | | | Blocked on C1 |
+| C3: VPN engines (AmneziaWG, XRay) | | | Blocked on C1 |
+| C4: Sources (file, QR) | | | Blocked on C1 |
+| C5: Account sync + E2E | | | Blocked on C1 + coxswain M6 |
+| C6: MDM + posture | | | Blocked on C1 |
+| C7: Admin role subset | | | Blocked on C1 |
+
+## Directory structure (future)
+
+```
+caravel/                   (this repo — umbrella / shared core)
+├── go/                    (shared Go core — VPN engine, crypto, proto, gRPC)
+├── proto/                 (proto contracts, codegen targets)
+├── BUILD.md               (shared build brief — see platform docs)
+└── LICENSE                (AGPL-3.0-or-later)
+
+caravel-android/           (separate repo)
+├── app/                   (Kotlin + Jetpack Compose)
+├── go/                    (symlink or git submodule → caravel/go)
+└── build.gradle
+
+caravel-ios/               (separate repo)
+├── app/                   (Swift + SwiftUI)
+├── go/                    (symlink or git submodule → caravel/go)
+└── Podfile / Package.swift
+```
+
+## Next steps
+
+1. **C1 decision:** Confirm gomobile architecture or switch to Kotlin Multiplatform
+2. **Shared core extraction:** Move VPN engine, profile store, crypto, gRPC codegen into `caravel/go/`
+3. **Submodule setup:** Each platform repo links `caravel/go` as a git submodule or symlink
+4. **Platform scaffolding:** Android and iOS projects link to their native SDKs
 
 ## Status
 
-🚧 Pre-alpha — scaffolding. See [BUILD.md](BUILD.md).
+🚧 Pre-alpha — C1 architecture design in progress. See [`docs/DESIGN.md`](../docs/blob/main/DESIGN.md) §3 for the platform design.
 
 ## License
 
