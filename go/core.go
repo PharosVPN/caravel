@@ -5,11 +5,34 @@
 // It exports Go interfaces that gomobile bridges to native code (Kotlin/Swift).
 package core
 
-//go:generate gomobile init -help
+// Version returns the caravel core version.
+func Version() string {
+	return "0.1.0-c1"
+}
 
-// This package is a gomobile bind target. Build it via:
-//   gomobile bind -target=android,ios ./go
-//
-// This generates:
-//   - Android: .aar with Java/Kotlin bindings
-//   - iOS: .xcframework with Swift bindings
+// Config holds the tunnel configuration.
+type Config struct {
+	Endpoint string
+}
+
+// Tunnel is the VPN tunnel interface.
+type Tunnel struct {
+	config *Config
+}
+
+// NewTunnel creates a new tunnel.
+func NewTunnel(endpoint string) *Tunnel {
+	return &Tunnel{
+		config: &Config{Endpoint: endpoint},
+	}
+}
+
+// Start initializes the tunnel (stub for C1 validation).
+func (t *Tunnel) Start() error {
+	return nil
+}
+
+// Stop tears down the tunnel (stub for C1 validation).
+func (t *Tunnel) Stop() error {
+	return nil
+}

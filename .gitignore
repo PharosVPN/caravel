@@ -1,0 +1,11 @@
+# gomobile build artifacts — rebuildable via ./build-bindings.sh, never committed
+caravel-android/caravel.aar
+caravel-android/caravel-sources.jar
+caravel-ios/Caravel.xcframework/
+
+# Go
+go/go.sum.bak
+*.test
+
+# OS
+.DS_Store
