@@ -11,17 +11,16 @@ import (
 	"github.com/PharosVPN/caravel/core/vp"
 )
 
-// TestVPNEngineInterface validates the tunnel engine is exported for gomobile.
+// TestVPNEngineInterface validates the tunnel engine's config surface is
+// exported (used by caravel-mac and, via the core, by the mobile shells).
 func TestVPNEngineInterface(t *testing.T) {
-	cfg := vp.TunnelConfig{
-		Protocol:  "amneziawg",
-		Endpoint:  "vpn.example.com:443",
-		PublicKey: "test-key",
+	cfg := vp.Config{
+		Endpoint:        "vpn.example.com:443",
+		ServerPublicKey: "test-key",
+		AllowedIPs:      []string{"0.0.0.0/0"},
 	}
-	
-	// Prove the interface is accessible and public (gomobile requirement)
 	_ = cfg
-	t.Logf("✓ VPN engine interface exported")
+	t.Logf("✓ VPN engine config exported")
 }
 
 // TestProfileStoreInterface validates the store interface is exported for gomobile.
