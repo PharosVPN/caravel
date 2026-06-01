@@ -33,4 +33,4 @@ Native — Kotlin (Android) + Swift (iOS) — over a shared core. See [BUILD.md]
 
 ## License
 
-AGPL-3.0-or-later. Contributions under the DCO (`git commit -s`).
+Apache-2.0. Contributions under the DCO (`git commit -s`).
