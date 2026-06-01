@@ -1,30 +1,24 @@
-.PHONY: gomobile-install gomobile-bind gomobile-bind-android gomobile-bind-ios clean
+.PHONY: bindings android ios test clean help
 
-# Install gomobile if not present
-gomobile-install:
-	@command -v gomobile >/dev/null 2>&1 || go install golang.org/x/mobile/cmd/gomobile@latest
-	@command -v gobind >/dev/null 2>&1 || go install golang.org/x/mobile/cmd/gobind@latest
-	gomobile init
+# The bindings are built by build-bindings.sh (single source of truth — it sets
+# the NDK, the -androidapi floor, and binds from inside the go/ module). Output
+# lands in dist/. The Android (caravel-android) and iOS (caravel-ios) apps are
+# SEPARATE repos that consume dist/caravel.aar and dist/Caravel.xcframework.
 
-# Build native bindings for both Android and iOS
-gomobile-bind: gomobile-bind-android gomobile-bind-ios
+bindings:        ## Build both platform bindings into dist/
+	./build-bindings.sh all
 
-# Android binding: generates caravel.aar (Java/Kotlin JNI bindings)
-gomobile-bind-android: gomobile-install
-	gomobile bind -target=android -o=caravel-android/caravel.aar ./go
+android:         ## Build dist/caravel.aar
+	./build-bindings.sh android
 
-# iOS binding: generates caravel.xcframework (Swift/C bindings)
-gomobile-bind-ios: gomobile-install
-	gomobile bind -target=ios -o=caravel-ios/caravel.xcframework ./go
+ios:             ## Build dist/Caravel.xcframework
+	./build-bindings.sh ios
 
-# Clean build artifacts
-clean:
-	rm -rf caravel-android/caravel.aar caravel-ios/caravel.xcframework
+test:            ## Test the core Go module
+	cd go && go test ./...
 
-.PHONY: help
+clean:           ## Remove built bindings
+	rm -rf dist
+
 help:
-	@echo "Caravel core build targets:"
-	@echo "  make gomobile-bind        - Build native bindings (Android + iOS)"
-	@echo "  make gomobile-bind-android - Build Android AAR only"
-	@echo "  make gomobile-bind-ios     - Build iOS framework only"
-	@echo "  make clean                 - Remove build artifacts"
+	@grep -E '^[a-z-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN{FS=":.*?## "}{printf "  %-12s %s\n", $$1, $$2}'

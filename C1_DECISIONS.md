@@ -38,20 +38,24 @@ gomobile toolchain is validated below.
 
 ---
 
-## Module structure
+## Repo layout — four SEPARATE repos (siblings, not nested)
+
+This repo (`caravel`) is the **core VPN library only**. Each platform is its own
+repo that consumes the core's binding/artifact:
 
 ```
-caravel/                   (umbrella + shared core)
-├── go/                    (gomobile bind target)
-│   ├── vp/               (VPN engine: AmneziaWG, XRay)
-│   ├── profile/          (Profile store: .pharos parsing, SQLite)
-│   ├── crypto/           (E2E key unwrap: Argon2id, XChaCha20)
-│   ├── sync/             (gRPC AccountSync client)
-│   └── proto/            (codegen from docs/proto/)
-├── caravel-android/       (separate repo)
-│   └── app/              (Kotlin + Jetpack Compose)
-└── caravel-ios/           (separate repo)
-    └── app/              (Swift + SwiftUI)
+PharosVPN/
+├── caravel/            ← THIS repo — the core library
+│   ├── go/             (the Go core; gomobile bind target)
+│   │   ├── vp/         (VPN engine: AmneziaWG, XRay)
+│   │   ├── profile/    (profile store: .pharos parsing)
+│   │   ├── crypto/     (E2E key unwrap: Argon2id, XChaCha20)
+│   │   ├── sync/       (gRPC AccountSync client)
+│   │   └── proto/      (codegen from docs/proto/)
+│   └── dist/           (build output: caravel.aar, Caravel.xcframework — gitignored)
+├── caravel-android/    (separate repo — Kotlin + Compose; consumes dist/caravel.aar)
+├── caravel-ios/        (separate repo — Swift + SwiftUI; links dist/Caravel.xcframework)
+└── caravel-mac/        (separate repo — Go CLI/macOS client; imports the core)
 ```
 
 ---

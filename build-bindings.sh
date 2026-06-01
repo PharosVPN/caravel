@@ -8,8 +8,11 @@
 #   ./build-bindings.sh ios        # iOS .xcframework only
 #
 # Outputs:
-#   caravel-android/caravel.aar          (consumed by the Android app's Gradle)
-#   caravel-ios/Caravel.xcframework      (linked by the iOS app's Xcode project)
+#   dist/caravel.aar         (copy into the caravel-android app's Gradle libs)
+#   dist/Caravel.xcframework (link from the caravel-ios app's Xcode project)
+#
+# This repo is the CORE library only. The Android (caravel-android) and iOS
+# (caravel-ios) apps are SEPARATE repos that consume these artifacts.
 set -euo pipefail
 
 REPO="$(cd "$(dirname "$0")" && pwd)"
@@ -42,19 +45,19 @@ echo "NDK=$ANDROID_NDK_HOME   (latest installed)"
 echo "JDK=$(java -version 2>&1 | head -1)"
 
 build_android() {
-  mkdir -p "$REPO/caravel-android"
+  mkdir -p "$REPO/dist"
   echo "→ Android .aar (minSdk $ANDROID_API, first run compiles the Android stdlib)…"
   ( cd "$CORE" && gomobile bind -target=android -androidapi "$ANDROID_API" \
-      -o "$REPO/caravel-android/caravel.aar" . )
-  echo "  done: $(ls -lh "$REPO/caravel-android/caravel.aar" | awk '{print $5}')"
+      -o "$REPO/dist/caravel.aar" . )
+  echo "  done: dist/caravel.aar ($(ls -lh "$REPO/dist/caravel.aar" | awk '{print $5}')) — copy into the caravel-android app's libs"
 }
 
 build_ios() {
-  mkdir -p "$REPO/caravel-ios"
+  mkdir -p "$REPO/dist"
   echo "→ iOS .xcframework (device + simulator)…"
   ( cd "$CORE" && gomobile bind -target=ios,iossimulator \
-      -o "$REPO/caravel-ios/Caravel.xcframework" . )
-  echo "  done: $(du -sh "$REPO/caravel-ios/Caravel.xcframework" | awk '{print $1}')"
+      -o "$REPO/dist/Caravel.xcframework" . )
+  echo "  done: dist/Caravel.xcframework ($(du -sh "$REPO/dist/Caravel.xcframework" | awk '{print $1}')) — link from the caravel-ios app"
 }
 
 case "$TARGET" in
