@@ -4,10 +4,12 @@ go 1.25.7
 
 tool golang.org/x/mobile/cmd/gobind
 
-require github.com/amnezia-vpn/amneziawg-go v0.2.18
+require (
+	github.com/amnezia-vpn/amneziawg-go v0.2.18
+	golang.org/x/crypto v0.51.0
+)
 
 require (
-	golang.org/x/crypto v0.51.0 // indirect
 	golang.org/x/mobile v0.0.0-20260529142300-ecb4cd65260a // indirect
 	golang.org/x/mod v0.36.0 // indirect
 	golang.org/x/net v0.54.0 // indirect
