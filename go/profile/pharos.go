@@ -44,12 +44,12 @@ const (
 
 // Parse errors.
 var (
-	ErrNotPharos       = errors.New("profile: not a pharos-profile file")
-	ErrUnsupportedVer  = errors.New("profile: unsupported profile version")
-	ErrPasswordNeeded  = errors.New("profile: password-protected profile — a password is required")
+	ErrNotPharos        = errors.New("profile: not a pharos-profile file")
+	ErrUnsupportedVer   = errors.New("profile: unsupported profile version")
+	ErrPasswordNeeded   = errors.New("profile: password-protected profile — a password is required")
 	ErrAccountKeyNeeded = errors.New("profile: account-mode profile — a device key + signer key are required")
-	ErrNoAmneziaWG     = errors.New("profile: node has no AmneziaWG protocol")
-	ErrNoNode          = errors.New("profile: profile has no usable node")
+	ErrNoAmneziaWG      = errors.New("profile: node has no AmneziaWG protocol")
+	ErrNoNode           = errors.New("profile: profile has no usable node")
 )
 
 // kdfParams records password-mode key-derivation parameters (pharos.kdfParams).
@@ -95,6 +95,42 @@ type Profile struct {
 	IssuedAt  time.Time `json:"issued_at"`
 	ExpiresAt time.Time `json:"expires_at"`
 	Nodes     []Node    `json:"nodes"`
+	// Path is the device's egress chain (entry → [mid] → exit) when it is bound
+	// to a multi-hop path; nil for a single-node egress. The client dials the
+	// entry hop and the controller routes the rest server-side.
+	Path *PathView `json:"path,omitempty"`
+}
+
+// PathHop is one node in a device's egress chain (hop 0 = entry, last = exit).
+type PathHop struct {
+	ID     string   `json:"id"`
+	Name   string   `json:"name"`
+	Region string   `json:"region"`
+	Role   string   `json:"role"`
+	IPs    []string `json:"ips"`
+}
+
+// PathView is the ordered egress chain a path-bound device's traffic takes.
+type PathView struct {
+	Name string    `json:"name"`
+	Hops []PathHop `json:"hops"`
+}
+
+// EntryNodeID is the node id of the path's entry hop, or "" if the profile has
+// no egress path. A path-bound device must enter the fleet at this node.
+func (p *Profile) EntryNodeID() string {
+	if p.Path == nil {
+		return ""
+	}
+	for _, h := range p.Path.Hops {
+		if h.Role == "entry" {
+			return h.ID
+		}
+	}
+	if len(p.Path.Hops) > 0 {
+		return p.Path.Hops[0].ID
+	}
+	return ""
 }
 
 // Node is one VPN endpoint in a profile.
@@ -236,6 +272,17 @@ func openPassword(env envelope, password string) ([]byte, error) {
 // Node returns a node by id, or the first node when id is empty. ErrNoNode if
 // there are none / no match.
 func (p *Profile) Node(id string) (*Node, error) {
+	// With no explicit choice, a path-bound device must enter at its entry hop —
+	// dialing a different node would bypass the cascade.
+	if id == "" {
+		if entry := p.EntryNodeID(); entry != "" {
+			for i := range p.Nodes {
+				if p.Nodes[i].ID == entry {
+					return &p.Nodes[i], nil
+				}
+			}
+		}
+	}
 	for i := range p.Nodes {
 		if id == "" || p.Nodes[i].ID == id || p.Nodes[i].Name == id {
 			return &p.Nodes[i], nil
