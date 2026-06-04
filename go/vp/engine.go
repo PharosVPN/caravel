@@ -12,6 +12,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/amnezia-vpn/amneziawg-go/conn"
@@ -75,6 +76,31 @@ func (t *Tunnel) Close() error {
 		t.dev = nil
 	}
 	return nil
+}
+
+// Stats returns the tunnel's cumulative received/transmitted bytes, summed over
+// peers, read from the AmneziaWG device's UAPI (rx_bytes / tx_bytes). ok is
+// false if the device is down or stats are unavailable.
+func (t *Tunnel) Stats() (rx, tx int64, ok bool) {
+	if t.dev == nil {
+		return 0, 0, false
+	}
+	s, err := t.dev.IpcGet()
+	if err != nil {
+		return 0, 0, false
+	}
+	for _, line := range strings.Split(s, "\n") {
+		if v, found := strings.CutPrefix(line, "rx_bytes="); found {
+			if n, err := strconv.ParseInt(strings.TrimSpace(v), 10, 64); err == nil {
+				rx += n
+			}
+		} else if v, found := strings.CutPrefix(line, "tx_bytes="); found {
+			if n, err := strconv.ParseInt(strings.TrimSpace(v), 10, 64); err == nil {
+				tx += n
+			}
+		}
+	}
+	return rx, tx, true
 }
 
 // uapi renders the wireguard-go UAPI configuration string: the interface
