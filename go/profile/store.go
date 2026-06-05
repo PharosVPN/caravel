@@ -1,57 +1,120 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The PharosVPN Authors
 
-// Package profile manages the local profile store and .pharos format.
 package profile
 
-// Profile is a parsed .pharos file (plaintext or decrypted).
-type Profile struct {
-	// Device (tunnel endpoint info)
-	EntryEndpoint string // e.g., "vpn.example.com:443"
-	EntryKey      string // server public key
-	
-	// Protocol set (may include AmneziaWG, XRay, etc.)
-	Protocols []string
-	
-	// Obfuscation (per-node parameters for AmneziaWG)
-	Obfuscation map[string]string
-}
+import (
+	"encoding/json"
+	"errors"
+	"fmt"
+	"os"
+	"path/filepath"
+	"sort"
+	"strings"
+)
 
-// ImportProfile parses a .pharos file and applies it to the local store.
-// enc: "none" (plaintext), "password" (Argon2id), "account" (device key)
-func ImportProfile(profileData []byte, enc string, passphrase string) (*Profile, error) {
-	// TODO: parse .pharos header, dispatch to decoder based on enc
-	// - none: unmarshal directly
-	// - password: Argon2id(passphrase) → key, decrypt with XChaCha20-Poly1305
-	// - account: decrypt with stored device key
-	return &Profile{}, nil
-}
+// ErrProfileNotFound is returned when a named profile is not in the store.
+var ErrProfileNotFound = errors.New("profile: not found in store")
 
-// Store is the local profile store (SQLite on-device).
+// Store is the on-device profile store. It keeps the raw `.pharos` files (still
+// encrypted for password/account modes) under a directory — secrets are only
+// decrypted in memory at connect time, never persisted in the clear. A flat
+// directory of `<name>.pharos` is enough for the desktop client; mobile uses
+// the platform keystore for the device key, not this store.
 type Store struct {
-	// path to SQLite DB
+	dir string
 }
 
-// NewStore opens or creates the profile store.
-func NewStore(dbPath string) (*Store, error) {
-	// TODO: open SQLite, create schema if needed
-	return &Store{}, nil
+// NewStore opens or creates the profile store rooted at dir.
+func NewStore(dir string) (*Store, error) {
+	if dir == "" {
+		return nil, errors.New("profile: store dir is required")
+	}
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return nil, fmt.Errorf("profile: create store dir: %w", err)
+	}
+	return &Store{dir: dir}, nil
 }
 
-// Save persists a profile to the store.
-func (s *Store) Save(name string, p *Profile) error {
-	// TODO: insert/update in profiles table
+// Dir returns the store's root directory.
+func (s *Store) Dir() string { return s.dir }
+
+// path returns the on-disk path for a profile name (sanitized to a basename).
+func (s *Store) path(name string) string {
+	name = strings.TrimSuffix(filepath.Base(name), Extension)
+	return filepath.Join(s.dir, name+Extension)
+}
+
+// Import validates that data is a `.pharos` file (by header) and stores it under
+// name, returning the stored path. It does not decrypt — secrets stay out of the
+// store; the header sniff just rejects non-profiles early.
+func (s *Store) Import(name string, data []byte) (string, error) {
+	if _, err := header(data); err != nil {
+		return "", err
+	}
+	p := s.path(name)
+	if err := os.WriteFile(p, data, 0o600); err != nil {
+		return "", fmt.Errorf("profile: write %s: %w", p, err)
+	}
+	return p, nil
+}
+
+// Raw returns the stored raw `.pharos` bytes for name (still encrypted). The
+// caller decrypts with Parse + the appropriate Options.
+func (s *Store) Raw(name string) ([]byte, error) {
+	data, err := os.ReadFile(s.path(name))
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, ErrProfileNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("profile: read %s: %w", name, err)
+	}
+	return data, nil
+}
+
+// Remove deletes a stored profile. Removing a missing profile is not an error.
+func (s *Store) Remove(name string) error {
+	err := os.Remove(s.path(name))
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("profile: remove %s: %w", name, err)
+	}
 	return nil
 }
 
-// Load retrieves a profile by name.
-func (s *Store) Load(name string) (*Profile, error) {
-	// TODO: query profiles table, unmarshal
-	return &Profile{}, nil
+// Entry is a stored profile's summary for listing.
+type Entry struct {
+	Name string // store name (filename without extension)
+	Enc  string // none | password | account (from the readable header)
 }
 
-// List returns all stored profiles.
-func (s *Store) List() ([]*Profile, error) {
-	// TODO: query all profiles
-	return []*Profile{}, nil
+// List returns the stored profiles, sorted by name, each with its encryption
+// mode read from the always-readable header.
+func (s *Store) List() ([]Entry, error) {
+	matches, err := filepath.Glob(filepath.Join(s.dir, "*"+Extension))
+	if err != nil {
+		return nil, fmt.Errorf("profile: list store: %w", err)
+	}
+	out := make([]Entry, 0, len(matches))
+	for _, m := range matches {
+		name := strings.TrimSuffix(filepath.Base(m), Extension)
+		enc := "?"
+		if data, err := os.ReadFile(m); err == nil {
+			if h, err := header(data); err == nil {
+				enc = h.Enc
+			}
+		}
+		out = append(out, Entry{Name: name, Enc: enc})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	return out, nil
+}
+
+// header parses just the always-readable envelope header, validating it is a
+// pharos-profile file.
+func header(data []byte) (envelope, error) {
+	var env envelope
+	if err := json.Unmarshal(data, &env); err != nil || env.Fmt != formatTag {
+		return envelope{}, ErrNotPharos
+	}
+	return env, nil
 }

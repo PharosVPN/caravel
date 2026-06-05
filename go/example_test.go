@@ -23,16 +23,21 @@ func TestVPNEngineInterface(t *testing.T) {
 	t.Logf("✓ VPN engine config exported")
 }
 
-// TestProfileStoreInterface validates the store interface is exported for gomobile.
+// TestProfileStoreInterface validates the profile types are exported for gomobile.
 func TestProfileStoreInterface(t *testing.T) {
-	// Prove the profile package and types are public (gomobile requirement)
+	// Prove the profile package and types are public (gomobile requirement).
 	p := &profile.Profile{
-		EntryEndpoint: "vpn.example.com:443",
-		EntryKey:      "test-key",
-		Protocols:     []string{"amneziawg"},
+		FleetID: "fleet-demo",
+		User:    "usr_demo",
+		Nodes: []profile.Node{{
+			ID:        "nod_demo",
+			Name:      "demo",
+			Endpoints: []string{"203.0.113.7"},
+			Protocols: []profile.Protocol{{Type: "amneziawg", V: 2}},
+		}},
 	}
 	_ = p
-	t.Logf("✓ Profile store interface exported")
+	t.Logf("✓ Profile types exported")
 }
 
 // TestSyncClientInterface validates the sync client is exported for gomobile.
