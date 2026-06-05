@@ -10,6 +10,8 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"net"
+	"strconv"
 	"testing"
 
 	"github.com/PharosVPN/caravel/core/crypto"
@@ -133,8 +135,13 @@ func assertResolvesToTunnel(t *testing.T, p *Profile) {
 	if err != nil {
 		t.Fatalf("Tunnel: %v", err)
 	}
-	if tun.Endpoint != "203.0.113.7:51820" {
-		t.Errorf("endpoint = %q, want 203.0.113.7:51820", tun.Endpoint)
+	// The single-IP pool resolves to that IP with a random port in [51820, 51830].
+	host, portStr, err := net.SplitHostPort(tun.Endpoint)
+	if err != nil || host != "203.0.113.7" {
+		t.Errorf("endpoint = %q, want host 203.0.113.7", tun.Endpoint)
+	}
+	if port, _ := strconv.Atoi(portStr); port < 51820 || port > 51830 {
+		t.Errorf("endpoint port %s not in [51820, 51830]", portStr)
 	}
 	if tun.Address != "10.86.0.5" {
 		t.Errorf("address = %q, want 10.86.0.5 (CIDR stripped)", tun.Address)
@@ -147,6 +154,39 @@ func assertResolvesToTunnel(t *testing.T, p *Profile) {
 	}
 	if tun.ServerPublicKey == "" || tun.PrivateKey == "" {
 		t.Error("keys not carried into tunnel")
+	}
+}
+
+// TestRandomEntryPool checks the client spreads across every IP in a node's
+// endpoint pool (the random entry-point feature, decision 17) and stays within
+// each entry's port range.
+func TestRandomEntryPool(t *testing.T) {
+	a := &AmneziaWG{
+		Endpoints: []EndpointPool{
+			{IP: "1.1.1.1", PortMin: 2000, PortMax: 3000},
+			{IP: "2.2.2.2", PortMin: 2000, PortMax: 3000},
+			{IP: "3.3.3.3", PortMin: 2000, PortMax: 3000},
+		},
+	}
+	seen := map[string]bool{}
+	for i := 0; i < 300; i++ {
+		ep, err := a.dialEndpoint(nil)
+		if err != nil {
+			t.Fatalf("dialEndpoint: %v", err)
+		}
+		host, portStr, err := net.SplitHostPort(ep)
+		if err != nil {
+			t.Fatalf("bad endpoint %q: %v", ep, err)
+		}
+		if port, _ := strconv.Atoi(portStr); port < 2000 || port > 3000 {
+			t.Fatalf("port %s out of [2000,3000]", portStr)
+		}
+		seen[host] = true
+	}
+	for _, ip := range []string{"1.1.1.1", "2.2.2.2", "3.3.3.3"} {
+		if !seen[ip] {
+			t.Errorf("entry IP %s never selected over 300 connects — not random", ip)
+		}
 	}
 }
 

@@ -13,6 +13,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math/rand/v2"
 	"net"
 	"strconv"
 	"strings"
@@ -336,25 +337,44 @@ func (n *Node) Tunnel() (*Tunnel, error) {
 	}, nil
 }
 
-// dialEndpoint picks a host:port to dial: the first endpoint-pool entry (its
-// PortMin, or :443 when unset), falling back to the node's flat IP list at :443.
+// dialEndpoint picks a host:port to dial at RANDOM from the node's endpoint pool
+// — a random IP and a random port in that entry's [PortMin, PortMax] range
+// (decision 17). The entry point therefore varies every connect, so there is no
+// single fixed IP/port to fingerprint or block. Falls back to a random IP from
+// the node's flat list at the default port when no pool is present.
 func (a *AmneziaWG) dialEndpoint(fallbackIPs []string) (string, error) {
+	pool := make([]EndpointPool, 0, len(a.Endpoints))
 	for _, ep := range a.Endpoints {
-		if ep.IP == "" {
-			continue
+		if ep.IP != "" {
+			pool = append(pool, ep)
 		}
-		port := ep.PortMin
-		if port == 0 {
-			port = defaultClientPort
-		}
-		return net.JoinHostPort(ep.IP, strconv.Itoa(port)), nil
 	}
+	if len(pool) > 0 {
+		ep := pool[rand.IntN(len(pool))]
+		return net.JoinHostPort(ep.IP, strconv.Itoa(randPort(ep.PortMin, ep.PortMax))), nil
+	}
+	ips := make([]string, 0, len(fallbackIPs))
 	for _, ip := range fallbackIPs {
 		if ip != "" {
-			return net.JoinHostPort(ip, strconv.Itoa(defaultClientPort)), nil
+			ips = append(ips, ip)
 		}
 	}
+	if len(ips) > 0 {
+		return net.JoinHostPort(ips[rand.IntN(len(ips))], strconv.Itoa(defaultClientPort)), nil
+	}
 	return "", errors.New("profile: node has no endpoint to dial")
+}
+
+// randPort returns a random UDP port in [min, max]; an unset min defaults to the
+// client port, and a zero-width / invalid range collapses to the single port.
+func randPort(min, max int) int {
+	if min <= 0 {
+		min = defaultClientPort
+	}
+	if max <= min {
+		return min
+	}
+	return min + rand.IntN(max-min+1)
 }
 
 // bareIP strips a CIDR mask from an address ("10.86.0.5/32" → "10.86.0.5").
