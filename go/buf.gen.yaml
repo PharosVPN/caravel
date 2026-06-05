@@ -1,0 +1,15 @@
+# SPDX-License-Identifier: Apache-2.0
+# Generates the AccountSync client stubs into caravel/core/gen.
+version: v2
+managed:
+  enabled: true
+  override:
+    - file_option: go_package_prefix
+      value: github.com/PharosVPN/caravel/core/gen
+plugins:
+  - local: protoc-gen-go
+    out: gen
+    opt: paths=source_relative
+  - local: protoc-gen-go-grpc
+    out: gen
+    opt: paths=source_relative

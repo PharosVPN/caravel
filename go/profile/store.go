@@ -109,6 +109,19 @@ func (s *Store) List() ([]Entry, error) {
 	return out, nil
 }
 
+// WrapPlaintext wraps a decrypted profile JSON in an `enc:none` `.pharos`
+// envelope, so a profile fetched by account sync can be stored in the form the
+// connect path already reads. The controller only ever held the sealed bundle;
+// the decryption happened on this device.
+func WrapPlaintext(profileJSON json.RawMessage) ([]byte, error) {
+	return json.Marshal(envelope{
+		Fmt:     formatTag,
+		V:       formatVersion,
+		Enc:     EncNone,
+		Payload: profileJSON,
+	})
+}
+
 // header parses just the always-readable envelope header, validating it is a
 // pharos-profile file.
 func header(data []byte) (envelope, error) {

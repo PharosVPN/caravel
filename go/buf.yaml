@@ -1,0 +1,7 @@
+# SPDX-License-Identifier: Apache-2.0
+# Caravel generates its own AccountSync *client* stubs from the controller's
+# proto (copied under proto/, kept in sync with helm/proto). The client carries
+# no controller code — only the wire contract.
+version: v2
+modules:
+  - path: proto
