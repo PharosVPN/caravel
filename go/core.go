@@ -5,9 +5,21 @@
 // It exports Go interfaces that gomobile bridges to native code (Kotlin/Swift).
 package core
 
+import (
+	_ "embed"
+	"strings"
+)
+
+// versionFile is the caravel version, embedded from VERSION (the single source
+// of truth bumped by scripts/bump-version.sh). caravel is a library, so it
+// carries its own version rather than taking one via -ldflags.
+//
+//go:embed VERSION
+var versionFile string
+
 // Version returns the caravel core version.
 func Version() string {
-	return "0.1.0-c1"
+	return strings.TrimSpace(versionFile)
 }
 
 // Config holds the tunnel configuration.
