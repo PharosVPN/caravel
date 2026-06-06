@@ -250,3 +250,65 @@ func TestParseRejectsNonPharos(t *testing.T) {
 		t.Errorf("garbage: got %v, want ErrNotPharos", err)
 	}
 }
+
+// TestXRayTunnelResolves checks that a node carrying both protocols resolves its
+// XRay/REALITY entry into a dialable XRayTunnel (the controller emits this shape):
+// the VLESS identity, the REALITY public key + camouflage, a TCP endpoint from
+// the pool, and the CIDR-stripped utun address.
+func TestXRayTunnelResolves(t *testing.T) {
+	awg, _ := json.Marshal(AmneziaWG{
+		PrivateKey: "cHJpdg==", Address: "10.86.0.9/32", PublicKey: "cHVi",
+		Endpoints: []EndpointPool{{IP: "203.0.113.7", PortMin: 443, PortMax: 443}},
+	})
+	xray, _ := json.Marshal(XRayReality{
+		UUID:        "11111111-1111-1111-1111-111111111111",
+		Flow:        "xtls-rprx-vision",
+		Address:     "10.86.0.9/32",
+		PublicKey:   "reality-pub-key",
+		ServerName:  "www.microsoft.com",
+		ShortID:     "",
+		Fingerprint: "chrome",
+		Endpoints:   []EndpointPool{{IP: "203.0.113.7", PortMin: 443, PortMax: 443}},
+		AllowedIPs:  []string{"0.0.0.0/0", "::/0"},
+	})
+	node := &Node{
+		ID: "nod_x", Name: "ams", Region: "eu", Endpoints: []string{"203.0.113.7"},
+		Protocols: []Protocol{
+			{Type: "amneziawg", V: 2, Params: awg},
+			{Type: "xray-reality", V: 1, Params: xray},
+		},
+	}
+
+	if !node.HasXRayReality() {
+		t.Fatal("HasXRayReality = false, want true")
+	}
+
+	tun, err := node.XRayTunnel()
+	if err != nil {
+		t.Fatalf("XRayTunnel: %v", err)
+	}
+	if tun.UUID != "11111111-1111-1111-1111-111111111111" || tun.Flow != "xtls-rprx-vision" {
+		t.Errorf("vless identity not carried: %+v", tun)
+	}
+	if tun.PublicKey != "reality-pub-key" || tun.ServerName != "www.microsoft.com" || tun.Fingerprint != "chrome" {
+		t.Errorf("reality camouflage not carried: %+v", tun)
+	}
+	if host, port, _ := net.SplitHostPort(tun.Endpoint); host != "203.0.113.7" || port != "443" {
+		t.Errorf("endpoint = %q, want 203.0.113.7:443 (TCP)", tun.Endpoint)
+	}
+	if tun.Address != "10.86.0.9" {
+		t.Errorf("address = %q, want 10.86.0.9 (CIDR stripped)", tun.Address)
+	}
+	if len(tun.AllowedIPs) != 2 {
+		t.Errorf("allowed-ips = %v", tun.AllowedIPs)
+	}
+
+	// A node with only AmneziaWG has no XRay entry.
+	awgOnly := &Node{Protocols: []Protocol{{Type: "amneziawg", V: 2, Params: awg}}}
+	if awgOnly.HasXRayReality() {
+		t.Error("HasXRayReality = true for an AmneziaWG-only node")
+	}
+	if _, err := awgOnly.XRayTunnel(); !errors.Is(err, ErrNoXRayReality) {
+		t.Errorf("XRayTunnel on awg-only node: got %v, want ErrNoXRayReality", err)
+	}
+}
