@@ -106,6 +106,20 @@ type Profile struct {
 	IssuedAt  time.Time       `json:"issued_at"`
 	ExpiresAt time.Time       `json:"expires_at"`
 	Profiles  []ClientProfile `json:"profiles"`
+	// Control is the geo-located control-plane endpoint the client syncs through
+	// (the relay). Clients place it on the map with a solid control-plane line.
+	// Nil when the controller location is unknown.
+	Control *ControlEndpoint `json:"control,omitempty"`
+}
+
+// ControlEndpoint is the geo-located control-plane endpoint (mirrors the
+// controller's profile.ControlEndpoint). Coordinates are embedded so an offline
+// client can place the pin without a geo database.
+type ControlEndpoint struct {
+	Label string  `json:"label"`
+	City  string  `json:"city,omitempty"`
+	Lat   float64 `json:"lat"`
+	Lon   float64 `json:"lon"`
 }
 
 // ClientProfile is one named connection config in a bundle (internal/profile.

@@ -15,6 +15,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
+	"time"
 
 	"github.com/PharosVPN/caravel/core/crypto"
 	"github.com/PharosVPN/caravel/core/deviceid"
@@ -65,6 +67,40 @@ func Dial(b deviceid.Bundle) (*Client, error) {
 		return nil, fmt.Errorf("sync: dial relay %s: %w", b.RelayAddr, err)
 	}
 	return &Client{conn: conn, rpc: accountv1.NewAccountSyncClient(conn)}, nil
+}
+
+// Reachable reports whether the control-plane endpoint (the relay named in the
+// bundle) completes a TLS handshake with the device leaf within timeout. It is a
+// lightweight liveness probe — it does NOT authenticate or fetch — so a client
+// can show "controller reachable" without a full sync. A false result is
+// informational: the data plane keeps running even when the controller is
+// unreachable ([[ephemeral-controller]]).
+func Reachable(ctx context.Context, b deviceid.Bundle, timeout time.Duration) bool {
+	cert, err := tls.X509KeyPair([]byte(b.DeviceCertPEM), []byte(b.DeviceKeyPEM))
+	if err != nil {
+		return false
+	}
+	roots := x509.NewCertPool()
+	if !roots.AppendCertsFromPEM([]byte(b.FleetCAPEM)) {
+		return false
+	}
+	dctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	d := &tls.Dialer{
+		NetDialer: &net.Dialer{Timeout: timeout},
+		Config: &tls.Config{
+			Certificates: []tls.Certificate{cert},
+			RootCAs:      roots,
+			ServerName:   b.RelayServerName,
+			MinVersion:   tls.VersionTLS13,
+		},
+	}
+	conn, err := d.DialContext(dctx, "tcp", b.RelayAddr)
+	if err != nil {
+		return false
+	}
+	_ = conn.Close()
+	return true
 }
 
 // Close releases the underlying connection.
