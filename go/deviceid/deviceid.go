@@ -29,6 +29,7 @@ type Bundle struct {
 	Fmt             string `json:"fmt"`
 	V               int    `json:"v"`
 	User            string `json:"user,omitempty"`
+	Alias           string `json:"alias,omitempty"`
 	RelayAddr       string `json:"relay_addr"`
 	RelayServerName string `json:"relay_server_name"`
 	CAFingerprint   string `json:"ca_fingerprint,omitempty"`
