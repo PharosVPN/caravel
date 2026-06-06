@@ -38,6 +38,9 @@ const (
 	// Protocol type tags (must match the controller's internal/profile).
 	ProtocolAmneziaWG   = "amneziawg"
 	ProtocolXRayReality = "xray-reality"
+	// ProtocolBoth is a profile-level tag: the profile offers both protocols on
+	// each node and the client picks at connect (auto prefers AmneziaWG).
+	ProtocolBoth = "both"
 
 	// defaultClientPort is where a node's client interface (awg0) listens when a
 	// profile's endpoint pool carries no explicit port (controller awgClientPort).
