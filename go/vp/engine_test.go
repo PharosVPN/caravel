@@ -59,6 +59,32 @@ func TestUAPIRendersObfuscationAndPeer(t *testing.T) {
 	}
 }
 
+// TestTunnelClosedGuards covers the nil-device guards on the Tunnel methods a
+// daemon drives concurrently. A zero-value Tunnel models a closed one (dev nil);
+// none of these must panic, and Wait must not block. (Bringing a real device up
+// needs a tun fd + root, exercised in caravel-opnsense's live VM test.)
+func TestTunnelClosedGuards(t *testing.T) {
+	var tn Tunnel // dev == nil
+
+	if rx, tx, ok := tn.Stats(); ok || rx != 0 || tx != 0 {
+		t.Errorf("Stats on closed tunnel = (%d,%d,%v), want (0,0,false)", rx, tx, ok)
+	}
+	tn.IpcHandle(nil) // must be a no-op, not a nil deref
+
+	select {
+	case <-tn.Wait(): // closed tunnel: channel is already closed
+	default:
+		t.Error("Wait on a closed tunnel did not return a closed channel")
+	}
+
+	if err := tn.Close(); err != nil { // idempotent
+		t.Errorf("Close: %v", err)
+	}
+	if err := tn.Close(); err != nil {
+		t.Errorf("double Close: %v", err)
+	}
+}
+
 func TestUAPIRejectsBadKey(t *testing.T) {
 	if _, err := (Config{PrivateKey: "not-base64!!", ServerPublicKey: b64key(t)}).uapi(); err == nil {
 		t.Error("expected error on a malformed private key")
