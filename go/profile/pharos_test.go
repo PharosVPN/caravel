@@ -42,12 +42,17 @@ func sampleProfile(t *testing.T) Profile {
 		FleetID:  "fleet-demo",
 		User:     "usr_demo",
 		Revision: 7,
-		Nodes: []Node{{
-			ID:        "nod_ams1",
-			Name:      "Amsterdam-1",
-			Region:    "eu-nl",
-			Endpoints: []string{"203.0.113.7"},
-			Protocols: []Protocol{{Type: "amneziawg", V: 2, Params: raw}},
+		Profiles: []ClientProfile{{
+			ID:       "pspec_demo",
+			Name:     "Amsterdam Direct",
+			Protocol: "amneziawg",
+			Nodes: []Node{{
+				ID:        "nod_ams1",
+				Name:      "Amsterdam-1",
+				Region:    "eu-nl",
+				Endpoints: []string{"203.0.113.7"},
+				Protocols: []Protocol{{Type: "amneziawg", V: 2, Params: raw}},
+			}},
 		}},
 	}
 }
@@ -127,7 +132,11 @@ func randBytes(t *testing.T, n int) []byte {
 // assertResolvesToTunnel checks a parsed profile resolves to the expected dial.
 func assertResolvesToTunnel(t *testing.T, p *Profile) {
 	t.Helper()
-	node, err := p.Node("")
+	cp, err := p.Select("")
+	if err != nil {
+		t.Fatalf("Select: %v", err)
+	}
+	node, err := cp.Node("")
 	if err != nil {
 		t.Fatalf("Node: %v", err)
 	}
@@ -195,8 +204,11 @@ func TestParsePlaintext(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
-	if p.FleetID != "fleet-demo" || p.Revision != 7 || len(p.Nodes) != 1 {
+	if p.FleetID != "fleet-demo" || p.Revision != 7 || len(p.Profiles) != 1 || len(p.Profiles[0].Nodes) != 1 {
 		t.Fatalf("profile fields wrong: %+v", p)
+	}
+	if p.Profiles[0].Name != "Amsterdam Direct" || p.Profiles[0].Protocol != "amneziawg" {
+		t.Fatalf("client profile metadata wrong: %+v", p.Profiles[0])
 	}
 	assertResolvesToTunnel(t, p)
 }

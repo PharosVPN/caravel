@@ -29,11 +29,16 @@ func TestProfileStoreInterface(t *testing.T) {
 	p := &profile.Profile{
 		FleetID: "fleet-demo",
 		User:    "usr_demo",
-		Nodes: []profile.Node{{
-			ID:        "nod_demo",
-			Name:      "demo",
-			Endpoints: []string{"203.0.113.7"},
-			Protocols: []profile.Protocol{{Type: "amneziawg", V: 2}},
+		Profiles: []profile.ClientProfile{{
+			ID:       "pspec_demo",
+			Name:     "demo",
+			Protocol: "amneziawg",
+			Nodes: []profile.Node{{
+				ID:        "nod_demo",
+				Name:      "demo",
+				Endpoints: []string{"203.0.113.7"},
+				Protocols: []profile.Protocol{{Type: "amneziawg", V: 2}},
+			}},
 		}},
 	}
 	_ = p

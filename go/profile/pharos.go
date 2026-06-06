@@ -56,6 +56,7 @@ var (
 	ErrNoAmneziaWG      = errors.New("profile: node has no AmneziaWG protocol")
 	ErrNoXRayReality    = errors.New("profile: node has no XRay/REALITY protocol")
 	ErrNoNode           = errors.New("profile: profile has no usable node")
+	ErrNoProfile        = errors.New("profile: bundle has no matching profile")
 )
 
 // kdfParams records password-mode key-derivation parameters (pharos.kdfParams).
@@ -93,21 +94,33 @@ type Options struct {
 	SignerPublic ed25519.PublicKey // account mode: the controller's profile-signing public key
 }
 
-// Profile is a parsed .pharos profile (internal/profile.Profile).
+// Profile is a parsed .pharos bundle (internal/profile.Profile): the set of
+// named profiles a device holds.
 type Profile struct {
-	FleetID   string    `json:"fleet_id"`
-	User      string    `json:"user"`
-	Revision  int64     `json:"revision"`
-	IssuedAt  time.Time `json:"issued_at"`
-	ExpiresAt time.Time `json:"expires_at"`
-	Nodes     []Node    `json:"nodes"`
-	// Path is the device's egress chain (entry → [mid] → exit) when it is bound
-	// to a multi-hop path; nil for a single-node egress. The client dials the
-	// entry hop and the controller routes the rest server-side.
+	FleetID   string          `json:"fleet_id"`
+	User      string          `json:"user"`
+	Revision  int64           `json:"revision"`
+	IssuedAt  time.Time       `json:"issued_at"`
+	ExpiresAt time.Time       `json:"expires_at"`
+	Profiles  []ClientProfile `json:"profiles"`
+}
+
+// ClientProfile is one named connection config in a bundle (internal/profile.
+// ClientProfile): a single data-plane protocol, the entry node(s) to dial, and —
+// for a cascade profile — the egress chain. The app lists these by name and the
+// user connects with one.
+type ClientProfile struct {
+	ID       string `json:"id"`
+	Name     string `json:"name"`
+	Protocol string `json:"protocol"`
+	Nodes    []Node `json:"nodes"`
+	// Path is the egress chain (entry → [mid] → exit) for a cascade profile; nil
+	// for a direct single-node egress. The client dials the entry hop and the
+	// controller routes the rest server-side.
 	Path *PathView `json:"path,omitempty"`
 }
 
-// PathHop is one node in a device's egress chain (hop 0 = entry, last = exit).
+// PathHop is one node in a profile's egress chain (hop 0 = entry, last = exit).
 type PathHop struct {
 	ID     string   `json:"id"`
 	Name   string   `json:"name"`
@@ -116,25 +129,62 @@ type PathHop struct {
 	IPs    []string `json:"ips"`
 }
 
-// PathView is the ordered egress chain a path-bound device's traffic takes.
+// PathView is the ordered egress chain a cascade profile's traffic takes.
 type PathView struct {
 	Name string    `json:"name"`
 	Hops []PathHop `json:"hops"`
 }
 
-// EntryNodeID is the node id of the path's entry hop, or "" if the profile has
-// no egress path. A path-bound device must enter the fleet at this node.
-func (p *Profile) EntryNodeID() string {
-	if p.Path == nil {
+// Select returns the profile matching ref (by id or name), or the first profile
+// when ref is empty. ErrNoProfile if there are none or no match.
+func (p *Profile) Select(ref string) (*ClientProfile, error) {
+	if len(p.Profiles) == 0 {
+		return nil, ErrNoProfile
+	}
+	if ref == "" {
+		return &p.Profiles[0], nil
+	}
+	for i := range p.Profiles {
+		if p.Profiles[i].ID == ref || p.Profiles[i].Name == ref {
+			return &p.Profiles[i], nil
+		}
+	}
+	return nil, ErrNoProfile
+}
+
+// SelectByProtocol returns the first profile carrying the given data-plane
+// protocol, or ErrNoProfile if none does.
+func (p *Profile) SelectByProtocol(proto string) (*ClientProfile, error) {
+	for i := range p.Profiles {
+		if p.Profiles[i].Protocol == proto {
+			return &p.Profiles[i], nil
+		}
+	}
+	return nil, ErrNoProfile
+}
+
+// Names lists the profile names in the bundle, for display.
+func (p *Profile) Names() []string {
+	out := make([]string, len(p.Profiles))
+	for i, cp := range p.Profiles {
+		out[i] = cp.Name
+	}
+	return out
+}
+
+// EntryNodeID is the node id of the profile's cascade entry hop, or "" if the
+// profile has no egress path. A cascade profile must enter at this node.
+func (cp *ClientProfile) EntryNodeID() string {
+	if cp.Path == nil {
 		return ""
 	}
-	for _, h := range p.Path.Hops {
+	for _, h := range cp.Path.Hops {
 		if h.Role == "entry" {
 			return h.ID
 		}
 	}
-	if len(p.Path.Hops) > 0 {
-		return p.Path.Hops[0].ID
+	if len(cp.Path.Hops) > 0 {
+		return cp.Path.Hops[0].ID
 	}
 	return ""
 }
@@ -308,23 +358,23 @@ func openPassword(env envelope, password string) ([]byte, error) {
 	return crypto.OpenXChaCha(key, env.Nonce, ciphertext, aad)
 }
 
-// Node returns a node by id, or the first node when id is empty. ErrNoNode if
-// there are none / no match.
-func (p *Profile) Node(id string) (*Node, error) {
-	// With no explicit choice, a path-bound device must enter at its entry hop —
+// Node returns a node in the profile by id, or the first node when id is empty.
+// ErrNoNode if there are none / no match.
+func (cp *ClientProfile) Node(id string) (*Node, error) {
+	// With no explicit choice, a cascade profile must enter at its entry hop —
 	// dialing a different node would bypass the cascade.
 	if id == "" {
-		if entry := p.EntryNodeID(); entry != "" {
-			for i := range p.Nodes {
-				if p.Nodes[i].ID == entry {
-					return &p.Nodes[i], nil
+		if entry := cp.EntryNodeID(); entry != "" {
+			for i := range cp.Nodes {
+				if cp.Nodes[i].ID == entry {
+					return &cp.Nodes[i], nil
 				}
 			}
 		}
 	}
-	for i := range p.Nodes {
-		if id == "" || p.Nodes[i].ID == id || p.Nodes[i].Name == id {
-			return &p.Nodes[i], nil
+	for i := range cp.Nodes {
+		if id == "" || cp.Nodes[i].ID == id || cp.Nodes[i].Name == id {
+			return &cp.Nodes[i], nil
 		}
 	}
 	return nil, ErrNoNode
