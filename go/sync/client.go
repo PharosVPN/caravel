@@ -162,7 +162,15 @@ func Fetch(ctx context.Context, b deviceid.Bundle, email, password string) (*Res
 	}
 	defer c.Close()
 
-	userID, keysEnrolled, err := c.Authenticate(ctx, email, password)
+	// Cert-auth by default (no email): the device's relay-verified leaf proves
+	// who it is, so the account passphrase never leaves the device — it is only
+	// used locally below to unwrap the e2e key. An email opts into the legacy
+	// passphrase login.
+	authPass := ""
+	if email != "" {
+		authPass = password
+	}
+	userID, keysEnrolled, err := c.Authenticate(ctx, email, authPass)
 	if err != nil {
 		return nil, err
 	}
