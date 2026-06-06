@@ -1,3 +1,9 @@
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset=".assets/logo-inverse.svg">
+    <img src=".assets/logo.svg" alt="PharosVPN" width="120" height="120">
+  </picture>
+</p>
 # caravel
 
 > The small, agile ship that crossed unknown oceans.
