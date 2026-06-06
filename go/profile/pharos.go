@@ -35,6 +35,10 @@ const (
 	EncPassword = "password"
 	EncAccount  = "account"
 
+	// Protocol type tags (must match the controller's internal/profile).
+	ProtocolAmneziaWG   = "amneziawg"
+	ProtocolXRayReality = "xray-reality"
+
 	// defaultClientPort is where a node's client interface (awg0) listens when a
 	// profile's endpoint pool carries no explicit port (controller awgClientPort).
 	defaultClientPort = 443
