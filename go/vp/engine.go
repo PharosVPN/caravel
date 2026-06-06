@@ -12,8 +12,10 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"fmt"
+	"net"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/amnezia-vpn/amneziawg-go/conn"
 	"github.com/amnezia-vpn/amneziawg-go/device"
@@ -43,9 +45,23 @@ type Config struct {
 	Obfuscation     Obfuscation
 }
 
-// Tunnel is a running AmneziaWG tunnel.
+// Tunnel is a running AmneziaWG tunnel. Its methods are safe for concurrent use:
+// a daemon may serve UAPI connections (IpcHandle) from many goroutines and read
+// Stats / Wait while another goroutine calls Close. mu guards dev so closing it
+// can't race those readers.
 type Tunnel struct {
+	mu  sync.RWMutex
 	dev *device.Device
+}
+
+// device returns the underlying device under the read lock, or nil once closed.
+// Callers use the returned pointer after releasing the lock — that is safe
+// because amneziawg-go's device methods are themselves safe to call concurrently
+// with device.Close (its own daemon serves UAPI while a signal triggers Close).
+func (t *Tunnel) device() *device.Device {
+	t.mu.RLock()
+	defer t.mu.RUnlock()
+	return t.dev
 }
 
 // Up configures and brings up an AmneziaWG tunnel over tunDev. The caller owns
@@ -69,11 +85,15 @@ func Up(cfg Config, tunDev tun.Device, logLevel int) (*Tunnel, error) {
 	return &Tunnel{dev: dev}, nil
 }
 
-// Close tears the tunnel down.
+// Close tears the tunnel down. It is idempotent and safe to call concurrently
+// with Stats / IpcHandle / Wait.
 func (t *Tunnel) Close() error {
-	if t.dev != nil {
-		t.dev.Close()
-		t.dev = nil
+	t.mu.Lock()
+	dev := t.dev
+	t.dev = nil
+	t.mu.Unlock()
+	if dev != nil {
+		dev.Close() // closed outside the lock; device.Close is guarded by sync.Once
 	}
 	return nil
 }
@@ -82,10 +102,11 @@ func (t *Tunnel) Close() error {
 // peers, read from the AmneziaWG device's UAPI (rx_bytes / tx_bytes). ok is
 // false if the device is down or stats are unavailable.
 func (t *Tunnel) Stats() (rx, tx int64, ok bool) {
-	if t.dev == nil {
+	dev := t.device()
+	if dev == nil {
 		return 0, 0, false
 	}
-	s, err := t.dev.IpcGet()
+	s, err := dev.IpcGet()
 	if err != nil {
 		return 0, 0, false
 	}
@@ -101,6 +122,30 @@ func (t *Tunnel) Stats() (rx, tx int64, ok bool) {
 		}
 	}
 	return rx, tx, true
+}
+
+// IpcHandle serves a single UAPI client connection against the underlying
+// AmneziaWG device, exposing the standard wireguard-go UAPI surface (get/set:
+// per-peer rx/tx bytes, last-handshake, endpoint). A long-lived caller (e.g. a
+// daemon) runs an Accept loop over a listener from ipc.UAPIOpen / ipc.UAPIListen
+// and dispatches each connection here. It is a no-op once the tunnel is closed.
+func (t *Tunnel) IpcHandle(conn net.Conn) {
+	if dev := t.device(); dev != nil {
+		dev.IpcHandle(conn)
+	}
+}
+
+// Wait returns a channel that is closed when the underlying device exits (for
+// example, on an unrecoverable tun read error). A daemon selects on it alongside
+// its termination signal so the process follows the engine's lifetime. If the
+// tunnel is already closed the returned channel is closed immediately.
+func (t *Tunnel) Wait() <-chan struct{} {
+	if dev := t.device(); dev != nil {
+		return dev.Wait()
+	}
+	ch := make(chan struct{})
+	close(ch)
+	return ch
 }
 
 // uapi renders the wireguard-go UAPI configuration string: the interface
