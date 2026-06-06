@@ -42,7 +42,9 @@ func TestProfileStoreInterface(t *testing.T) {
 
 // TestSyncClientInterface validates the sync client is exported for gomobile.
 func TestSyncClientInterface(t *testing.T) {
-	client := sync.NewClient("beacon.example.com:443")
-	_ = client
+	// Prove the sync package surface is exported (gomobile / app use): the
+	// high-level Fetch entry point and the lower-level Dial.
+	_ = sync.Fetch
+	_ = sync.Dial
 	t.Logf("✓ Sync client interface exported")
 }

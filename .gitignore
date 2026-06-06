@@ -8,3 +8,4 @@ go/go.sum.bak
 
 # OS
 .DS_Store
+bin/
