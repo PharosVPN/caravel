@@ -50,6 +50,7 @@ var (
 	ErrPasswordNeeded   = errors.New("profile: password-protected profile — a password is required")
 	ErrAccountKeyNeeded = errors.New("profile: account-mode profile — a device key + signer key are required")
 	ErrNoAmneziaWG      = errors.New("profile: node has no AmneziaWG protocol")
+	ErrNoXRayReality    = errors.New("profile: node has no XRay/REALITY protocol")
 	ErrNoNode           = errors.New("profile: profile has no usable node")
 )
 
@@ -188,6 +189,21 @@ type Obfuscation struct {
 	I5   string `json:"i5,omitempty"`
 }
 
+// XRayReality is the params for a `type:"xray-reality"` protocol (profile.build).
+// The node owns its REALITY keypair; the client gets the public key plus its own
+// VLESS identity (UUID + flow) and the camouflage policy it must present.
+type XRayReality struct {
+	UUID        string         `json:"uuid"`
+	Flow        string         `json:"flow"`
+	Address     string         `json:"address"`
+	PublicKey   string         `json:"public_key"`  // node's REALITY public key
+	ServerName  string         `json:"server_name"` // SNI the client presents (decoy host)
+	ShortID     string         `json:"short_id"`
+	Fingerprint string         `json:"fingerprint"` // uTLS fingerprint, e.g. "chrome"
+	Endpoints   []EndpointPool `json:"endpoints"`
+	AllowedIPs  []string       `json:"allowed_ips"`
+}
+
 // Tunnel is a resolved, dialable AmneziaWG tunnel for one node — everything the
 // platform shell needs (vp.Config fields + the utun address).
 type Tunnel struct {
@@ -202,6 +218,24 @@ type Tunnel struct {
 	Keepalive       int
 	MTU             int
 	Obfuscation     Obfuscation
+}
+
+// XRayTunnel is a resolved, dialable XRay/REALITY tunnel for one node —
+// everything the platform shell / engine needs to stand up a VLESS+REALITY
+// outbound and route the utun through it.
+type XRayTunnel struct {
+	NodeID      string
+	NodeName    string
+	UUID        string // VLESS client id
+	Flow        string // VLESS flow, e.g. "xtls-rprx-vision"
+	Endpoint    string // host:port to dial (TCP)
+	Address     string // bare tunnel IP for the utun (CIDR mask stripped)
+	PublicKey   string // node's REALITY public key
+	ServerName  string // SNI to present (decoy host)
+	ShortID     string
+	Fingerprint string // uTLS fingerprint, e.g. "chrome"
+	AllowedIPs  []string
+	MTU         int
 }
 
 // Parse decodes a `.pharos` file, decrypting per its `enc` mode. It content-
@@ -292,6 +326,16 @@ func (p *Profile) Node(id string) (*Node, error) {
 	return nil, ErrNoNode
 }
 
+// HasXRayReality reports whether the node offers an XRay/REALITY protocol entry.
+func (n *Node) HasXRayReality() bool {
+	for _, pr := range n.Protocols {
+		if pr.Type == "xray-reality" {
+			return true
+		}
+	}
+	return false
+}
+
 // amneziaWG returns the node's AmneziaWG params, ignoring unknown protocols.
 func (n *Node) amneziaWG() (*AmneziaWG, error) {
 	for _, pr := range n.Protocols {
@@ -304,6 +348,20 @@ func (n *Node) amneziaWG() (*AmneziaWG, error) {
 		}
 	}
 	return nil, ErrNoAmneziaWG
+}
+
+// xrayReality returns the node's XRay/REALITY params, ignoring unknown protocols.
+func (n *Node) xrayReality() (*XRayReality, error) {
+	for _, pr := range n.Protocols {
+		if pr.Type == "xray-reality" {
+			var x XRayReality
+			if err := json.Unmarshal(pr.Params, &x); err != nil {
+				return nil, fmt.Errorf("profile: decode xray-reality params: %w", err)
+			}
+			return &x, nil
+		}
+	}
+	return nil, ErrNoXRayReality
 }
 
 // Tunnel resolves the node's AmneziaWG protocol into a dialable Tunnel: it picks
@@ -337,14 +395,61 @@ func (n *Node) Tunnel() (*Tunnel, error) {
 	}, nil
 }
 
+// XRayTunnel resolves the node's XRay/REALITY protocol into a dialable
+// XRayTunnel: it picks an entry endpoint (TCP) from the pool (or the node's IP
+// list) and strips the address CIDR for the utun.
+func (n *Node) XRayTunnel() (*XRayTunnel, error) {
+	x, err := n.xrayReality()
+	if err != nil {
+		return nil, err
+	}
+	endpoint, err := pickEndpoint(x.Endpoints, n.Endpoints)
+	if err != nil {
+		return nil, err
+	}
+	allowed := x.AllowedIPs
+	if len(allowed) == 0 {
+		allowed = []string{"0.0.0.0/0", "::/0"}
+	}
+	flow := x.Flow
+	fingerprint := x.Fingerprint
+	if fingerprint == "" {
+		fingerprint = "chrome"
+	}
+	return &XRayTunnel{
+		NodeID:      n.ID,
+		NodeName:    n.Name,
+		UUID:        x.UUID,
+		Flow:        flow,
+		Endpoint:    endpoint,
+		Address:     bareIP(x.Address),
+		PublicKey:   x.PublicKey,
+		ServerName:  x.ServerName,
+		ShortID:     x.ShortID,
+		Fingerprint: fingerprint,
+		AllowedIPs:  allowed,
+		MTU:         defaultMTU,
+	}, nil
+}
+
 // dialEndpoint picks a host:port to dial at RANDOM from the node's endpoint pool
 // — a random IP and a random port in that entry's [PortMin, PortMax] range
 // (decision 17). The entry point therefore varies every connect, so there is no
 // single fixed IP/port to fingerprint or block. Falls back to a random IP from
 // the node's flat list at the default port when no pool is present.
 func (a *AmneziaWG) dialEndpoint(fallbackIPs []string) (string, error) {
-	pool := make([]EndpointPool, 0, len(a.Endpoints))
-	for _, ep := range a.Endpoints {
+	return pickEndpoint(a.Endpoints, fallbackIPs)
+}
+
+// pickEndpoint picks a host:port to dial at RANDOM from an endpoint pool — a
+// random IP and a random port in that entry's [PortMin, PortMax] range (decision
+// 17), so the entry point varies every connect and there is no single fixed
+// IP/port to fingerprint or block. Falls back to a random IP from the node's
+// flat list at the default port when no pool is present. Shared by AmneziaWG
+// (UDP) and XRay/REALITY (TCP) — the transport is the caller's concern.
+func pickEndpoint(endpoints []EndpointPool, fallbackIPs []string) (string, error) {
+	pool := make([]EndpointPool, 0, len(endpoints))
+	for _, ep := range endpoints {
 		if ep.IP != "" {
 			pool = append(pool, ep)
 		}
