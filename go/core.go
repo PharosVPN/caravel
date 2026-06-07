@@ -41,9 +41,9 @@ const logLevelError = 1
 // store is the on-disk profile store; set by Init.
 var store *profile.Store
 
-// Init points the engine at the app's profile directory (e.g. the Android
+// InitStore points the engine at the app's profile directory (e.g. the Android
 // filesDir or the iOS App Group container). Call once at startup.
-func Init(dir string) error {
+func InitStore(dir string) error {
 	s, err := profile.NewStore(dir)
 	if err != nil {
 		return err
