@@ -292,7 +292,7 @@ func resolve(bundleName, profileName, protoPref string) (*profile.ClientProfile,
 // a profile (address, mtu, dns, routes, endpoint, proto), as JSON. Call it before
 // establishing the OS tunnel, then pass the resulting fd to Connect.
 func Prepare(bundleName, profileName, protoPref string) (string, error) {
-	_, node, useXRay, err := resolve(bundleName, profileName, protoPref)
+	cp, node, useXRay, err := resolve(bundleName, profileName, protoPref)
 	if err != nil {
 		return "", err
 	}
@@ -323,6 +323,13 @@ func Prepare(bundleName, profileName, protoPref string) (string, error) {
 		if t.MTU > 0 {
 			np.MTU = t.MTU
 		}
+	}
+	// A cascade profile carries a reduced, hop-aware MTU (the controller sizes it
+	// to fit each inner entry→exit link). Honour it over the per-tunnel default so
+	// large packets don't blackhole on a multi-hop path; a direct profile sets 0
+	// here and keeps 1420.
+	if cp.MTU > 0 {
+		np.MTU = cp.MTU
 	}
 	if len(np.Routes) == 0 {
 		np.Routes = []string{"0.0.0.0/0", "::/0"}

@@ -267,6 +267,36 @@ func TestParseRejectsNonPharos(t *testing.T) {
 // XRay/REALITY entry into a dialable XRayTunnel (the controller emits this shape):
 // the VLESS identity, the REALITY public key + camouflage, a TCP endpoint from
 // the pool, and the CIDR-stripped utun address.
+// TestClientProfileMTU checks the per-profile `mtu` the controller emits on a
+// cascade profile round-trips through the bundle parse, that Select carries it,
+// and that a direct profile (no mtu) reads 0 — the read path Prepare relies on
+// to honour the hop-aware MTU and otherwise keep the 1420 default.
+func TestClientProfileMTU(t *testing.T) {
+	// A cascade profile carries the controller's reduced, hop-aware MTU.
+	bundle := `{"fleet_id":"f","user":"u","profiles":[` +
+		`{"id":"p_cascade","name":"EU Cascade","protocol":"amneziawg","mtu":1340,` +
+		`"path":{"name":"c","hops":[{"id":"a","role":"entry"},{"id":"b","role":"exit"}]},"nodes":[]},` +
+		`{"id":"p_direct","name":"Direct","protocol":"amneziawg","nodes":[]}]}`
+	var p Profile
+	if err := json.Unmarshal([]byte(bundle), &p); err != nil {
+		t.Fatalf("unmarshal bundle: %v", err)
+	}
+	cascade, err := p.Select("p_cascade")
+	if err != nil {
+		t.Fatalf("select cascade: %v", err)
+	}
+	if cascade.MTU != 1340 {
+		t.Fatalf("cascade MTU = %d, want 1340 (hop-aware)", cascade.MTU)
+	}
+	direct, err := p.Select("p_direct")
+	if err != nil {
+		t.Fatalf("select direct: %v", err)
+	}
+	if direct.MTU != 0 {
+		t.Fatalf("direct MTU = %d, want 0 (client defaults to 1420)", direct.MTU)
+	}
+}
+
 func TestXRayTunnelResolves(t *testing.T) {
 	awg, _ := json.Marshal(AmneziaWG{
 		PrivateKey: "cHJpdg==", Address: "10.86.0.9/32", PublicKey: "cHVi",

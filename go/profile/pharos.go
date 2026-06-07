@@ -135,6 +135,12 @@ type ClientProfile struct {
 	// for a direct single-node egress. The client dials the entry hop and the
 	// controller routes the rest server-side.
 	Path *PathView `json:"path,omitempty"`
+	// MTU is the tunnel MTU the controller sets for this profile. A cascade
+	// profile reduces it below 1420 so a full client packet still fits each inner
+	// entry→exit link after the per-hop decap/recap (a 1420 packet would
+	// blackhole on large transfers). 0/omitted for a direct profile → the client
+	// keeps the 1420 default.
+	MTU int `json:"mtu,omitempty"`
 }
 
 // PathHop is one node in a profile's egress chain (hop 0 = entry, last = exit).
