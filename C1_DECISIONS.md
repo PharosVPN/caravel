@@ -140,8 +140,8 @@ let tunnel = GoVpDial(config)
 | Depends on | Status | Unblocked? |
 |---|---|---|
 | coxswain M1–M7 | ✅ | Yes — caravel doesn't need it for C1–C3 (local-only tunnel) |
-| beacon R1–R6 | ✅ | Yes — needed for C5 (account sync), not C1–C4 |
-| buoy B1–B5 | ✅ | Yes — caravel doesn't need buoy binary for C1–C3 |
+| relay R1–R6 | ✅ | Yes — needed for C5 (account sync), not C1–C4 |
+| node N1–N5 | ✅ | Yes — caravel doesn't need node binary for C1–C3 |
 | Node cascade (decision 18) | ⚠️ designed | No — post-C5 feature, not needed for v1 |
 
 **Bottom line:** C1 is fully unblocked. No external dependencies.

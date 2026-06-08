@@ -37,7 +37,7 @@ the local store:
 
 | Source | Implementation note |
 |---|---|
-| Account sync | gRPC to `beacon`→`coxswain`; pull `account`-mode `.pharos`, decrypt with device key |
+| Account sync | gRPC to `relay`→`coxswain`; pull `account`-mode `.pharos`, decrypt with device key |
 | QR scan | enrollment ticket (fetch full profile) or self-contained profile QR |
 | File import | OS "open with" → `.pharos`; register MIME / UTI / intent filter |
 | MDM managed config | Android managed configurations / iOS Managed App Configuration |
