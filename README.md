@@ -8,9 +8,12 @@
 
 > The small, agile ship that crossed unknown oceans.
 
-**`caravel` is the PharosVPN mobile client** — the app end-users actually run.
-It establishes the VPN tunnel and acquires its profiles from whichever source
-fits the user: a synced account, a QR scan, a file, or enterprise MDM.
+**`caravel` is the shared PharosVPN client core** (Go) — the engine the platform's
+apps are built on. It parses and decrypts profiles, runs account sync, and drives
+the VPN tunnel; profiles enter from whichever source fits the user: a synced
+account, a QR scan, a file, or enterprise MDM. The per-platform apps
+(`caravel-mac` / `-ios` / `-android` / `-linux` and the OpenWRT/OPNsense plugins)
+are thin shells over this core.
 
 Part of the [PharosVPN](https://github.com/PharosVPN) platform — see
 [`docs/DESIGN.md`](https://github.com/PharosVPN/docs/blob/main/DESIGN.md).
@@ -31,11 +34,16 @@ Part of the [PharosVPN](https://github.com/PharosVPN) platform — see
 
 ## Stack
 
-Native — Kotlin (Android) + Swift (iOS) — over a shared core. See [BUILD.md](BUILD.md).
+Go — `CGO_ENABLED=0`, pure-Go AmneziaWG (`amneziawg-go`) + XRay (`xray-core`).
+Exposed to the native apps via `gomobile` (`.aar` / `.xcframework`) and consumed
+directly by the desktop/router builds. See [BUILD.md](BUILD.md).
 
 ## Status
 
-🚧 Pre-alpha — scaffolding. See [BUILD.md](BUILD.md).
+Pre-alpha. The core is shipped and backs the released v0.1.0 clients (macOS,
+Linux, Android, plus the OpenWRT/OPNsense plugins and the iOS device build):
+`.pharos` parsing/decryption, account sync, and the AmneziaWG + XRay/REALITY
+tunnel engine are live. See [BUILD.md](BUILD.md).
 
 ## License
 
