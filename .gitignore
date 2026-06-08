@@ -5,6 +5,9 @@ dist/
 # Go
 go/go.sum.bak
 *.test
+# the headless reference CLI compiled in place (rebuild with `go build ./cmd/caravel`)
+go/caravel
+go/cmd/caravel/caravel
 
 # OS
 .DS_Store

@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/PharosVPN/caravel/core/deviceid"
+	"github.com/PharosVPN/caravel/core/enroll"
 	"github.com/PharosVPN/caravel/core/profile"
 	csync "github.com/PharosVPN/caravel/core/sync"
 	"github.com/PharosVPN/caravel/core/vp"
@@ -97,6 +98,55 @@ func SyncAndStore(pharosid []byte, email, password string) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	return syncBundle(bundle, pharosid, email, password)
+}
+
+// Enroll redeems a `pharosvpn://enroll?relay=...&token=...&ca=...` join link into
+// a fully provisioned device WITHOUT any account passphrase. It generates the
+// device's keys on-device (a P-256 mTLS keypair + an X25519 encryption keypair —
+// private halves never leave), claims the one-time ticket through the relay
+// (cert-less, the only AccountSync method that needs no device leaf), assembles
+// the `.pharosid` from the response, persists it, then syncs the device's
+// per-device-sealed profile and stores it like an imported bundle. Returns the
+// stored bundle name, ready for Prepare/Connect.
+//
+// deviceName labels the device on the controller (and names the local bundle);
+// platform is the OS/kind. Both may be "" (the controller fills defaults).
+func Enroll(link, deviceName, platform string) (string, error) {
+	if err := ensureStore(); err != nil {
+		return "", err
+	}
+	l, err := enroll.ParseLink(link)
+	if err != nil {
+		return "", err
+	}
+	if deviceName == "" {
+		deviceName = "caravel-device"
+	}
+	if platform == "" {
+		platform = "caravel"
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+	defer cancel()
+
+	bundle, err := enroll.Claim(ctx, l, deviceName, platform)
+	if err != nil {
+		return "", err
+	}
+	pharosid, err := bundle.Marshal()
+	if err != nil {
+		return "", err
+	}
+	// Per-device sync: the bundle carries the device's own X25519 key, so Fetch
+	// opens the sealed profile with it — no email/passphrase.
+	return syncBundle(bundle, pharosid, "", "")
+}
+
+// syncBundle fetches + decrypts the device's sealed profile through the relay
+// named in bundle, REPLACES the cloud-synced set, and stores the fresh profile
+// envelope + a `.synced` marker + the raw `.pharosid`. Shared by SyncAndStore
+// (legacy account path) and Enroll (per-device join-link path).
+func syncBundle(bundle deviceid.Bundle, pharosid []byte, email, password string) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
 	defer cancel()
 	res, err := csync.Fetch(ctx, bundle, email, password)

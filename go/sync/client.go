@@ -188,10 +188,26 @@ type Result struct {
 }
 
 // Fetch runs the whole device-side sync: dial → authenticate → (enroll on a
-// first device) → get the sealed bundle → unwrap the device key with the
-// passphrase → open the bundle. It returns the decrypted profile. The controller
-// only ever handled ciphertext.
+// first device) → get the sealed bundle → recover the decryption key → open the
+// bundle. It returns the decrypted profile. The controller only ever handled
+// ciphertext.
+//
+// Two decryption paths, chosen by the bundle's shape:
+//
+//   - PER-DEVICE (join-link enrollment): the bundle carries the device's own
+//     X25519 private key (deviceid.Bundle.EncryptionKeyPEM) and coxswain returns
+//     an EMPTY wrapped_private_key. The device opens its profile with its own key
+//     — NO account passphrase. The email/password args are ignored.
+//   - LEGACY (account-sync): the bundle has no device key; coxswain returns the
+//     account's passphrase-wrapped X25519 private key, which the device unwraps
+//     with the account passphrase, then opens the bundle.
 func Fetch(ctx context.Context, b deviceid.Bundle, email, password string) (*Result, error) {
+	// A join-link bundle holds the device's own decryption key.
+	devicePriv, err := b.EncryptionPrivateKey()
+	if err != nil {
+		return nil, err
+	}
+
 	c, err := Dial(b)
 	if err != nil {
 		return nil, err
@@ -211,9 +227,11 @@ func Fetch(ctx context.Context, b deviceid.Bundle, email, password string) (*Res
 		return nil, err
 	}
 
-	// First device for this account: mint the user's keypair, wrap the private
-	// key under the passphrase, and enrol the public key + wrapped blob.
-	if !keysEnrolled {
+	// First device for the LEGACY account path only: mint the user's keypair, wrap
+	// the private key under the passphrase, and enrol the public key + wrapped
+	// blob. A per-device (join-link) bundle already holds its key — coxswain sealed
+	// to it at claim time — so it never enrols an account key.
+	if devicePriv == nil && !keysEnrolled {
 		kp, err := crypto.GenerateKeyPair()
 		if err != nil {
 			return nil, err
@@ -232,15 +250,13 @@ func Fetch(ctx context.Context, b deviceid.Bundle, email, password string) (*Res
 		return nil, err
 	}
 
-	deviceKey, err := crypto.UnwrapPrivateKey(password, rp.WrappedPrivateKey)
+	// Recover the decryption key: the device's own key (per-device) or the
+	// passphrase-unwrapped account key (legacy).
+	deviceKey, err := decryptionKey(devicePriv, password, rp.WrappedPrivateKey)
 	if err != nil {
 		return nil, err
 	}
-	var bundle crypto.SealedBundle
-	if err := json.Unmarshal(rp.Ciphertext, &bundle); err != nil {
-		return nil, fmt.Errorf("sync: malformed sealed bundle: %w", err)
-	}
-	plaintext, err := crypto.OpenSealed(bundle, deviceKey, rp.SigningPublicKey)
+	plaintext, err := openProfile(rp, deviceKey)
 	if err != nil {
 		return nil, err
 	}
@@ -252,4 +268,28 @@ func Fetch(ctx context.Context, b deviceid.Bundle, email, password string) (*Res
 		SignerPublic: rp.SigningPublicKey,
 		DeviceKey:    deviceKey,
 	}, nil
+}
+
+// decryptionKey picks the X25519 private key that opens the sealed bundle: the
+// device's own key when the bundle carries one (per-device / join-link), else the
+// account key unwrapped from the passphrase-wrapped blob (legacy). A per-device
+// bundle for which coxswain still returned a wrapped key is treated as
+// per-device — the device's own key is authoritative.
+func decryptionKey(devicePriv []byte, password string, wrapped []byte) ([]byte, error) {
+	if devicePriv != nil {
+		return devicePriv, nil
+	}
+	if len(wrapped) == 0 {
+		return nil, errors.New("sync: no device key in bundle and no wrapped account key returned")
+	}
+	return crypto.UnwrapPrivateKey(password, wrapped)
+}
+
+// openProfile verifies + decrypts the sealed bundle with key.
+func openProfile(rp *RemoteProfile, key []byte) ([]byte, error) {
+	var bundle crypto.SealedBundle
+	if err := json.Unmarshal(rp.Ciphertext, &bundle); err != nil {
+		return nil, fmt.Errorf("sync: malformed sealed bundle: %w", err)
+	}
+	return crypto.OpenSealed(bundle, key, rp.SigningPublicKey)
 }
